@@ -2,7 +2,14 @@
 
 https://github.com/BlocklyDuino/BlocklyDuino-v2
 
-# Run on local
+# Run
+
+### Online
+
+- https://namtranduc.github.io/LeanbotBLE_Uploader
+
+### Local
+
 - Create server, for example using python:
 ```
 cd C:\Users\Dell\Downloads\LeanbotBLE_Uploader\
@@ -14,17 +21,65 @@ py -m http.server 8000
 
 ---
 
+## 2026-01-29
+
+### 1. Switch to Monaco if Blockly file is invalid
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/8a9b66e
+
+<img src="changelog/260129/Invalid_xml.png" width="640"/>
+
+
+### 2. Correct source code when upload
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/00df833
+
+
+### 3. Add null checking to fix upload error
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/612716f
+
+- `event.thongtin` or `event.noidung` is sometimes null
+
+```
+main.js:1587 Uncaught (in promise) TypeError: Cannot read properties of null (reading 'replace')
+  at shorten (main.js:1587:29)
+  at logLbIDEEvent (main.js:1594:20)
+  at leanbot.Compiler.onCompileError (main.js:245:3)
+  at LeanbotCompiler.compile (LeanbotCompiler.js:58:40)
+  at async LeanbotBLE.compileAndUpload (LeanbotBLE.js:163:27)
+  at async HTMLButtonElement.<anonymous> (main.js:284:3)
+```
+
+### 4. Show version info in log
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/253f8a3
+
+<img src="changelog/260129/Version_info.png" width="640"/>
+
+
+### 5. Allow using `*.bduino` file extension
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/0854d33
+
+---
+
 ## 2026-01-28
 
-### 1. Wrap Blockly iframe by container to show/hide correctly
+### 1. Correct Blockly path
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/1abe9f5
+
+
+### 2. Wrap Blockly iframe by container to show/hide correctly
 
 - Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/d2d7bd5
 
 ```diff
   // LeanbotBLE_Uploader/index.html
 + <div id="blocklyEditor">
--   <iframe id="blocklyEditor"      src="LB-Blockly/index.html"></iframe>
-+   <iframe id="blocklyInlineFrame" src="LB-Blockly/index.html"></iframe>
+-   <iframe id="blocklyEditor"      src="LB-blockly/index.html"></iframe>
++   <iframe id="blocklyInlineFrame" src="LB-blockly/index.html"></iframe>
 + </div>
 
 
@@ -42,26 +97,26 @@ py -m http.server 8000
   }
 ```
 
-### 2. Allow loading xml file
+### 3. Allow loading xml file
 
 - Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/1bd5f61
 
 
-### 3. Hide Blockly content when overflow to prevent scrollbars
+### 4. Hide Blockly content when overflow to prevent scrollbars
 
 - Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/5f78252
 
 <img src="changelog/260128/Blockly_overflow.png" width="640"/>
 
 
-### 4. Communicate with Blockly via global function in same origin
+### 5. Communicate with Blockly via global function in same origin
 
 - Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/2b3bc05
   - Add wrapper `LeanbotBLE_Uploader/BlocklyEditor.js` to call Blockly global window functions
   - Because parent and iframe are in the same origin, don't need to use `postMessage`
   - Note: `Blockly global window functions` must be declared after Blockly workspace created by `Blockly.inject()`
 
-- __LeanbotBLE_Uploader/LB-blockly/js/init.js__
+- __`LeanbotBLE_Uploader/LB-blockly/js/init.js`__
 ```diff
   Code.init = function () {
     ...
@@ -102,7 +157,7 @@ py -m http.server 8000
   }
 ```
 
-- __LeanbotBLE_Uploader/BlocklyEditor.js__
+- __`LeanbotBLE_Uploader/BlocklyEditor.js`__
 ```diff
   export class BlocklyEditor {
 +   getContent() {
@@ -169,7 +224,7 @@ py -m http.server 8000
     <div id="codeEditor"></div>
 
 +   <!-- Embed Blockly on bottom -->
-+   <iframe id="blocklyEditor" src="LB-Blockly/index.html"></iframe>
++   <iframe id="blocklyEditor" src="LB-blockly/index.html"></iframe>
 
   </div>
 

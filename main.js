@@ -2,6 +2,9 @@
 // ============================================================
 // URL PARAMETERS + GLOBAL CONFIG
 // ============================================================
+
+console.log(`Version = 2026.01.29 22:00`);
+
 const params = new URLSearchParams(window.location.search);
 window.BLE_MaxLength = parseInt(params.get("BLE_MaxLength"));
 window.BLE_Interval  = parseInt(params.get("BLE_Interval"));
@@ -266,7 +269,7 @@ btnUpload.addEventListener("click", async () => {
     return;
   }
 
-  const sourceCode = inoEditor.getCppCode();
+  const sourceCode = isXmlFile(window.currentFileId) ? blocklyEditor.getCppCode() : inoEditor.getCppCode();
   if (!sourceCode || sourceCode.trim() === "") {
     alert("No code to compile!");
     return null;
@@ -560,7 +563,7 @@ function isXmlFile(id) {
   if (!it || it.isFolder) return false;
 
   const name = String(it.data || "").trim().toLowerCase();
-  return name.endsWith(".xml");
+  return name.endsWith(".xml") || name.endsWith(".bduino");
 }
 
 // ============================================================
@@ -705,7 +708,11 @@ function openFileInBlockly(content) {
   document.getElementById("codeEditor").style.display    = "none";  // hide Monaco
   document.getElementById("blocklyEditor").style.display = "block"; // show Blockly
 
-  blocklyEditor.setContent(content);
+  if ( blocklyEditor.setContent(content) ) {
+    // console.log("openFileInBlockly");
+  } else {
+    openFileInMonaco(content);  // switch to Monaco if failed
+  }
 }
 
 function openFileInEditor(fileId) {
@@ -1577,6 +1584,7 @@ if (initialOpenId) {
 function logLbIDEEvent(event) {
 
   const shorten = (text, len = 64) =>{
+    if (typeof text !== "string") return "";  // null/undefined safe checking
     const normalized = text.replace(/\r?\n+/g, " ").replace(/\s+/g, " ").trim()
     return normalized.length > len ? normalized.slice(0, len) : normalized;
   }

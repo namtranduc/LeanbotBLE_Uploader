@@ -11,8 +11,9 @@ export class BlocklyEditor {
   setContent(contentString) {
     const iframe = document.getElementById("blocklyInlineFrame");
     if (iframe.contentWindow.Blockly_setBlockContent) {
-      iframe.contentWindow.Blockly_setBlockContent(contentString);
+      return iframe.contentWindow.Blockly_setBlockContent(contentString);
     }
+    return false;
   }
 
 

@@ -299,11 +299,13 @@ Code.init = function () {
       try {
         xml = Blockly.Xml.textToDom(contentString);
       } catch (e) {
-        alert("Invalid XML!\n" + e.message);
-        return;
+        //alert("Invalid XML!\n" + e.message);
+        alert("Invalid XML!");
+        return false;
       };
       Code.workspace.clear();
       Blockly.Xml.domToWorkspace(xml, Code.workspace);
+      return true;
     }
 
     notifyBlockChange = function() {
