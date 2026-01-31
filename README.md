@@ -1,8 +1,6 @@
 # LeanbotBLE_Uploader
 
-https://github.com/BlocklyDuino/BlocklyDuino-v2
-
-# Run
+# Demo
 
 ### Online
 

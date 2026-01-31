@@ -310,9 +310,10 @@ Code.init = function () {
 
     notifyBlockChange = function() {
         if (window.parent.onChangeBlockly) {
+            const fileId = window.parent.currentFileId;
             clearTimeout(Blockly_changeTimer);
             Blockly_changeTimer = setTimeout(() => {
-                window.parent.onChangeBlockly();
+                window.parent.onChangeBlockly(fileId);
             }, 150);
         }
     }

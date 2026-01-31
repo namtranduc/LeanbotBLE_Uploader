@@ -3,7 +3,7 @@
 // URL PARAMETERS + GLOBAL CONFIG
 // ============================================================
 
-console.log(`Version = 2026.01.29 22:00`);
+console.log(`Version = 2026.01.31 22:00`);
 
 const params = new URLSearchParams(window.location.search);
 window.BLE_MaxLength = parseInt(params.get("BLE_MaxLength"));
@@ -425,6 +425,8 @@ const btnCloseSerial = document.getElementById("btnCloseSerial");
 function openSerial() {
   workspace.classList.add("serial-open");
   serialSection.classList.remove("is-hidden");
+  // console.log("openSerial");
+  // openFileInEditor(window.currentFileId);
 }
 
 function closeSerial() {
@@ -487,8 +489,8 @@ inoEditor.onChangeContent = () =>  {
   saveTimer = setTimeout(saveWorkspaceFilesToLocalStorage, AutoSaveDelayMs); // save after 10000ms of inactivity
 }
 
-window.onChangeBlockly = function () {
-  const id = window.currentFileId;
+window.onChangeBlockly = function (fileId) {
+  const id = fileId;
   if (!id) return;
 
   fileContents[id] = blocklyEditor.getContent();
