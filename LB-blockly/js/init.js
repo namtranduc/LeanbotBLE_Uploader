@@ -123,6 +123,8 @@ Code.init = function () {
     });
     const metrics = Code.workspace.getMetrics();
     var onresize = function (e) {
+        // Let #content_area in "css\UI.css" do the resize
+        /*
         var element = container;
         var x = 0;
         var y = 0;
@@ -135,6 +137,7 @@ Code.init = function () {
         blocklyDiv.style.top = y + 'px';
         blocklyDiv.style.width = container.offsetWidth + 'px';
         blocklyDiv.style.height = container.offsetHeight + 'px';
+        */
         Blockly.svgResize(Code.workspace);
 //        if (Code.workspace.RTL) {
 //          blocklyDiv.style.left = metrics.absoluteLeft + 'px';
