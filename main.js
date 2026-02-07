@@ -3,7 +3,7 @@
 // URL PARAMETERS + GLOBAL CONFIG
 // ============================================================
 
-console.log(`Version = 2026.02.01 22:00`);
+console.log(`Version = 2026.02.07 10:00`);
 
 const params = new URLSearchParams(window.location.search);
 window.BLE_MaxLength = parseInt(params.get("BLE_MaxLength"));
@@ -490,7 +490,6 @@ inoEditor.onChangeContent = () =>  {
 window.onChangeBlockly = function (fileId) {
   const id = fileId;
   if (!id) return;
-//if (!isXmlFile(fileId)) return;
 
   fileContents[id] = blocklyEditor.getContent();
 

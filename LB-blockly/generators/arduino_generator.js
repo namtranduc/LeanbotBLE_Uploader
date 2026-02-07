@@ -28,7 +28,7 @@ Blockly.Arduino = new Blockly.Generator('Arduino');
  * Leanbot Blockly Editor version
  * @type string
  */
-Blockly.Arduino.LeanbotBlocklyVersion = "Leanbot Blockly Editor 2026-02-01";
+Blockly.Arduino.LeanbotBlocklyVersion = "Leanbot Blockly Editor 2026-02-07";
 
 /**
  * List of illegal variable names.

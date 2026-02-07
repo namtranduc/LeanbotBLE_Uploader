@@ -271,8 +271,15 @@ td.tabMiddle {
 }
 
 #content_hoverButton {
+    /* 260207 - Move tooltip from Blockly Editor row to button row */
+    /*
     margin: 5px;
     padding: 10px;
+    */
+    position: absolute;           /* Remove from normal page layout, can overlap others */
+    left: 50%;                    /* Place the left edge at horizontal center */
+    transform: translateX(-50%);  /* Move element left by 50% of its own width -> perfectly centered */
+
     border-radius: 4px;
     font-size: x-large;
     color: #FFFFFF;

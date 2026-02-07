@@ -16,7 +16,8 @@
     <body>
         <div class="table_wrapper">
             <table id="globalTable">
-                <tr id="optionsTop">
+                <!-- 260207 - Hide Blockly Editor row -->
+                <tr id="optionsTop" hidden>
                     <td  id="optionsTopTitle">
                         <img src="./blocklyduino/media/logo-lb-2.png" style="width: 35px; vertical-align: middle;" />
                         <span class="TitleText" id="appName"></span>
@@ -25,13 +26,16 @@
                         <!-- <i class="mdi-image-edit sketch_name_icon active"></i> -->
                         <!-- <input id="sketch_name" class="sketch_name" type="text" size="10"> -->
                     <!-- </span>         -->
+                    <!-- 260207 - Move tooltip from Blockly Editor row to button row
                     <td  id="optionsTopInteractiveHelp" class="tabMiddle">
                         <span id="content_hoverButton"></span>
                     </td>
+                    -->
                 </tr>
                 <tr  id="functionsIcons">
                     <td colspan="2">
-                        <button id="menuButton" class="iconButtons" onclick="document.getElementById('menuPopup').style.display = 'block';document.getElementById('menuButton').classList.toggle('active');">
+                        <!-- 260207 - Hide menu -->
+                        <button id="menuButton" class="iconButtons" onclick="document.getElementById('menuPopup').style.display = 'block';document.getElementById('menuButton').classList.toggle('active');" hidden>
                             <span id="menuButtonButton_span">
                                 <i class="fas fa-ellipsis-v"></i>
                             </span>
@@ -241,6 +245,10 @@
                                 <i class="fas fa-search"></i>
                             </span>
                         </button>
+
+                        <!-- 260207 - Move tooltip from Blockly Editor row to button row -->
+                        <span id="content_hoverButton"></span>
+
                     </td>
                 </tr>
                 <tr id="globalWorkspace">
@@ -256,12 +264,13 @@
                                         <span class="slider"></span>
                                     </label>
                                 </div>
-                                <button id="copyCodeButton1" class="iconButtons" onclick="Code.copyToClipboardToNewWindow()" style="float: right;padding: 6px;border-radius: 4px;">
+                                <!-- 260207 - Hide copy code buttons -->
+                                <button id="copyCodeButton1" class="iconButtons" onclick="Code.copyToClipboardToNewWindow()" style="float: right;padding: 6px;border-radius: 4px;" hidden>
                                     <span id="copyCodeButton_span1">
                                         <i class="far fa-copy"></i>
                                     </span>
                                 </button>
-                                <button id="copyCodeButton" class="iconButtons" onclick="Code.copyToClipboard()">
+                                <button id="copyCodeButton" class="iconButtons" onclick="Code.copyToClipboard()" hidden>
                                     <span id="copyCodeButton_span">
                                         <i class="far fa-copy"></i>
                                     </span>

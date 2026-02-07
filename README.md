@@ -19,6 +19,64 @@ py -m http.server 8000
 
 ---
 
+## 2026-02-07
+
+### 1. Allow using `Ctrl + /` to comment code in Monaco editor
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/5341d84
+  - Copy from: https://github.com/lesysang1322002/Leanbot-Web-BLE-Tools/commit/103e504
+
+### 2. Hide copy code buttons in Blockly
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/9f58ca1
+
+### 3. Hide menu in Blockly
+
+<img src="changelog/260207/Blockly_Menu.png" width="480"/>
+
+| # | Button               | Id                | Callback function         | Description                                            |
+|---|----------------------|-------------------|---------------------------|--------------------------------------------------------|
+| 1 | New project          | newButton         | Code.newProject()         | Create a blank workspace (no blocks at all)            |
+| 2 | Load Blockly file    | loadXMLfakeButton | Code.loadXmlBlocklyFile() | Load workspace from a file                             |
+| 3 | Save to Blockly file | saveXMLButton     | Code.saveXmlBlocklyFile() | Save workspace to a file                               |
+| 4 | Export code          | saveCodeButton    | Code.saveCodeFile()       | Save generated Arduino code to a file                  |
+| 5 | Reset Blockly        | resetButton       | Code.ResetWorkspace()     | Reset workspace to default (with Leanbot start blocks) |
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/eef26e4
+
+### 4. Hide Blockly Editor row
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/b7dcbfa
+  - Hide Blockly Editor in the top row
+  - Move tooltip from top row to button row
+
+<img src="changelog/260207/Blockly_Interface.png" width="1024"/>
+
+---
+
+## 2026-02-01
+
+### 1. Capture current Blockly file to save correctly
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/da853f1
+
+### 2. Fix issue Blockly code disappears when resize or compile
+
+- Code change: https://github.com/ptitopen-git/D11_TranDucNam/commit/279b3a2
+
+### 3. Crowser caching issue
+
+- Browsers cache static files to improve performance. With normal refresh (F5):
+  - HTML may update
+  - CSS / JS may still be the old cached version
+  - → mismatch = __strange issues__
+
+- Action required each time a new version is released
+  - Work around: users have to `hard refresh (Ctrl+F5 or Ctrl+Shift+R)` to force browser to re-download everything
+  - Best solution: implement `Cache busting` techique (will be implemented later, users don't need to `hard refresh`)
+
+---
+
 ## 2026-01-29
 
 ### 1. Switch to Monaco if Blockly file is invalid
