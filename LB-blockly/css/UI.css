@@ -352,14 +352,15 @@ td.tabMiddle {
 }
 .wrapper_up {
     width: 100%;
+    /* 260213 - Hide unused bottom bar "barre_h" */
     /* Firefox */
-    height: -moz-calc(100% - 41px);
+    height: -moz-calc(100% - 0px);
     /* WebKit */
-    height: -webkit-calc(100% - 41px);
+    height: -webkit-calc(100% - 0px);
     /* Opera */
-    height: -o-calc(100% - 41px);
+    height: -o-calc(100% - 0px);
     /* Standard */
-    height: calc(100% - 41px);
+    height: calc(100% - 0px);
     min-height: 5px;
     display: flex;
 }
