@@ -8,7 +8,6 @@ html, body{
 body{
   display:flex;
   flex-direction:column;
-  min-height:100vh;
 }
 
 .time,.rssi{
@@ -73,6 +72,10 @@ body{
 .lb-icon-btn.disabled{
   pointer-events:none;
   opacity:0.5;
+}
+
+.lb-tab.disabled.hidden {
+  visibility: hidden;
 }
 
 .lb-tab:hover,
@@ -157,30 +160,82 @@ body{
   min-height:0;
 }
 
+/* normal */
 #editorRow{
   display:grid;
-  grid-template-columns:280px 1fr;
+  grid-template-columns: 250px 1fr;
   flex:1 1 0;
   min-height:0;
+  transition: grid-template-columns 0.18s ease;
 }
 
-#fileTreePanel{
+/* collapsed */
+#editorRow.tree-collapsed{
+  grid-template-columns: 32px 1fr;
+}
+
+/* hide tree content */
+#editorRow.tree-collapsed #fileTreePanel{
+  display:none;
+}
+
+/* toolbar layout */
+#editorRow.tree-collapsed #fileTreeToolbar{
+  justify-content:center;
+  padding:6px 4px;
+}
+
+/* hide all buttons except Show Tree */
+#editorRow.tree-collapsed #fileTreeToolbar > *:not(#btnShowTree){
+  display:none;
+}
+
+#fileTreeColumn{
+  display:flex;
+  flex-direction:column;
   min-height:0;
-  overflow:auto;
   border-right:1px solid #333;
-  background: #fafafa;
+  background:#fafafa;
 }
 
 #fileTreeToolbar{
   display:flex;
-  flex-direction:row;
-  gap:8px;
-  background: #f0f0f0;
+  gap:3px;                 
+  padding:3px;             
+  background:#f0f0f0;
+  border-bottom:1px solid #ccc;
+  flex:0 0 auto; 
 }
 
 #fileTreeToolbar .lb-icon-btn{
-  width:auto;
-  flex:1;
+  padding:2px 4px;         
+  font-size:12px;         
+  white-space: nowrap;
+  flex: 0 0 auto;
+  letter-spacing: 0px;
+}
+
+#btnShowTree{
+  padding:2px 3px;
+}
+
+#fileTreeToolbar .lb-icon-img{
+  width:12px;
+  height:12px;
+}
+
+/* tighten text buttons */
+#btnNewFile,
+#btnNewFolder,
+#btnLoadFile{
+  letter-spacing:0;
+  white-space:nowrap;
+}
+
+#fileTreePanel{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
 }
 
 .file-tree-item[disabled]{
@@ -215,6 +270,7 @@ body{
 /* File tree selected / focused */
 .file-tree-item {
   width: 100%;
+  cursor: default !important;
 }
 
 .file-tree-item.is-selected {
@@ -236,6 +292,7 @@ body{
 #editorSection{
   flex:1 1 0;
   min-height:0;
+  min-width: 0;
 }
 
 #codeEditor{
@@ -303,6 +360,15 @@ body{
   letter-spacing:0.8px;
   color:#666;
   cursor:pointer;
+}
+
+/* đẩy cụm phải sang phải */
+#serialTabsRight{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:6px; /* khoảng cách Auto hide ↔ Close */
+  padding-right:4px;
 }
 
 #serialTabs .serial-tab.active{
@@ -455,7 +521,8 @@ body{
   flex:1;
   min-height:0;
   display:grid;
-  grid-template-columns:1fr 2fr;
+  /* grid-template-columns:1fr 2fr; */
+  grid-template-columns:250px 1fr;
   gap:5px;
 }
 

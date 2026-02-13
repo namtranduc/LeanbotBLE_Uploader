@@ -41,23 +41,23 @@ export class InoEditor {
     return this.editor?.getValue() || "";
   }
 
-
   setContent(contentString) {
     if (!this.__isMonacoReady || !this.editor) {
       this.__pendingContent = String(contentString ?? "");
       return;
     }
     this.editor.setValue(String(contentString ?? ""));
+    this.#setReadOnly(false); // always unlock when set content
   }
+
+  setContentReadOnly(contentString) { // force set content and read-only mode, any setContent after will unlock it
+    this.setContent(contentString);
+    this.#setReadOnly(true);
+  } 
 
   getCppCode() { // Dùng khi compile, có thể khác với Content (khi là BlocklyEditor)
     return this.getContent(); // Just a placeholder for future implementation
   };
-
-  setReadOnly(readOnly) {
-    if (!this.editor) return;
-    this.editor.updateOptions({ readOnly: readOnly });
-  }
 
   /* ================= INTERNAL ================= */
 
@@ -65,8 +65,10 @@ export class InoEditor {
     // Arduino keywords thêm vào highlight
     monaco.languages.register({ id: "arduino" });
 
+    // Needed for Ctrl + / to work (requires `comments` in language configuration): https://github.com/microsoft/monaco-editor/discussions/3840
+    // Mirrors Monaco's built-in C++ config: https://github.com/microsoft/monaco-editor/blob/main/src/languages/definitions/cpp/cpp.ts
     monaco.languages.setLanguageConfiguration("arduino", {
-      comments: {
+        comments: {
         lineComment: "//",
         blockComment: ["/*", "*/"],
       },
@@ -90,7 +92,6 @@ export class InoEditor {
         { open: "'", close: "'" },
       ],
     });
-
     monaco.languages.setMonarchTokensProvider("arduino", {
     tokenizer: {
         root: [
@@ -231,4 +232,10 @@ export class InoEditor {
       },
     });
   }
+
+  #setReadOnly(readOnly) { // force set read-only state
+    if (!this.editor) return;
+    this.editor.updateOptions({ readOnly: readOnly });
+  }
+
 }

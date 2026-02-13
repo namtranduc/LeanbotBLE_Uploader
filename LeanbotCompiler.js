@@ -1,4 +1,11 @@
 export class LeanbotCompiler {
+
+  static #config = null;
+
+  static setConfig(config) {
+    LeanbotCompiler.#config = config;
+  }
+
   #prevHash = "";
   #prevResponse = null;
 
@@ -9,24 +16,30 @@ export class LeanbotCompiler {
   #compileStartMs = 0;
   #compileEndMs = 0;
 
-  async compile(sourceCode, compileServer) {
+  constructor(){
+    if (!LeanbotCompiler.#config) {
+      throw new Error("Missing LeanbotCompiler #config");
+    } 
+  }
+
+  async compile(sourceCode, compileServer = LeanbotCompiler.#config.Server) {
     const sketchName = "LeanbotSketch";
 
     const payload = {
-      fqbn: "arduino:avr:uno",
+      fqbn: LeanbotCompiler.#config.CompilePayload.fqbn,
       files: [
         {
           content: sourceCode,
           name: `${sketchName}/${sketchName}.ino`,
         },
       ],
-      flags: { verbose: false, preferLocal: false },
-      libs: [],
+      flags: LeanbotCompiler.#config.CompilePayload.flags,
+      libs: LeanbotCompiler.#config.libs,
     };
 
     this.#compileStartMs = performance.now();
     this.#compileEndMs = 0;
-    const predictedTotal = 10000; //10000 ms = 10s
+    const predictedTotal = LeanbotCompiler.#config.PredictedTotalMs; //10000 ms = 10s
 
     const emitProgress = () => {
       const elapsedTime = (performance.now() - this.#compileStartMs);
@@ -34,7 +47,7 @@ export class LeanbotCompiler {
       if (this.onCompileProgress) this.onCompileProgress(elapsedTime, estimatedTotal);
     };
 
-    const progressTimer = setInterval(emitProgress, 500); // emit progress every 500ms
+    const progressTimer = setInterval(emitProgress, LeanbotCompiler.#config.ProgressEmitIntervalMs); // emit progress every 500ms
 
     try {
       const compileResult = await this.#requestCompile(payload, compileServer);

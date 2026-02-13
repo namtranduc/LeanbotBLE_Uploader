@@ -1,36 +1,138 @@
 // main.js
-// ============================================================
-// URL PARAMETERS + GLOBAL CONFIG
-// ============================================================
-
-console.log(`Version = 2026.02.07 10:00`);
-
-const params = new URLSearchParams(window.location.search);
-window.BLE_MaxLength = parseInt(params.get("BLE_MaxLength"));
-window.BLE_Interval  = parseInt(params.get("BLE_Interval"));
-window.SERVER        = params.get("SERVER") || "ide-server-qa.leanbot.space";
-window.MODE          = params.get("MODE");
-
-if (window.MODE === "xyz123") {
-  window.SERVER = "";
-  console.log("[TEST MODE] Using empty SERVER");
-}
-
-console.log(`BLE_MaxLength = ${window.BLE_MaxLength}`);
-console.log(`BLE_Interval = ${window.BLE_Interval}`);
-console.log(`SERVER = ${window.SERVER}`);
 
 // ============================================================
-// IMPORTS + INIT LEANBOT
+// VERSION
+// ============================================================
+console.log(`Version = 2026.02.13 10:00`);
+
+// ============================================================
+// IMPORTS
 // ============================================================
 import { LeanbotBLE } from "./LeanbotBLE.js";
+import { InoEditor } from "./InoEditor.js";
+import { BlocklyEditor } from "./BlocklyEditor.js";
+import { LeanbotCompiler } from "./LeanbotCompiler.js";
+import { LeanbotConfig } from "./Config.js";
+import { LeanFs } from "./LeanFs.js";
+
+// ============================================================
+//  Mount Leanbot File System
+// ============================================================
+
+const leanfs = new LeanFs();
+await leanfs.mount();
+
+// ============================================================
+// CONFIG LOADING
+// ============================================================
+
+const LocalConfigName = "IDELocalConfig";
+
+const LocalConfigUUID = leanfs.getItemByPath(leanfs.getRoot(), `${LocalConfigName}/${LocalConfigName}.yaml`); // find from root
+
+const LocalConfigFile = await leanfs.readFile(LocalConfigUUID);
+
+const Config = new LeanbotConfig();
+
+const IDEConfig = await Config.getIDEConfig(LocalConfigFile);
+
+console.log(IDEConfig);
+
+// URL PARAMETERS + GLOBAL CONFIG
+console.log(`BLE_MaxLength = ${IDEConfig.LeanbotBLE.EspUploader.BLE_MaxLength}`);
+console.log(`BLE_Interval = ${IDEConfig.LeanbotBLE.EspUploader.BLE_Interval}`);
+console.log(`SERVER = ${IDEConfig.LeanbotCompiler.Server}`);
+
+// ============================================================
+// save config then INIT LEANBOT
+// ============================================================
+
+LeanbotBLE.setConfig(IDEConfig.LeanbotBLE);
+LeanbotCompiler.setConfig(IDEConfig.LeanbotCompiler);
+
 const leanbot = new LeanbotBLE();
 
-import { InoEditor } from "./InoEditor.js";
-const inoEditor = new InoEditor();
 
-import { BlocklyEditor } from "./BlocklyEditor.js";
+// ============================================================
+// EDITOR
+// ============================================================
+
+class GlobalEditor {
+  setContentReadOnly(contentString) {
+    // console.log("setContentReadOnly:", contentString);
+    document.getElementById("codeEditor").style.display    = "block";  // show Monaco
+    document.getElementById("blocklyEditor").style.display = "none";   // hide Blockly
+    inoEditor.setContentReadOnly(contentString);  // ino only
+  }
+
+  getContent() {
+    const fileId = window.currentFileId;
+    // console.log("getContent");
+    // console.log(fileId, leanfs.getName(fileId), leanfs.getItemType(fileId));
+
+    if ( leanfs.isBlocklyFile(fileId) ) {
+      return blocklyEditor.getContent();
+    } else {
+      return inoEditor.getContent();
+    }
+  }
+
+  getCppCode() {
+    const fileId = window.currentFileId;
+    // console.log("getCppCode");
+    // console.log(fileId, leanfs.getName(fileId), leanfs.getItemType(fileId));
+
+    if ( leanfs.isBlocklyFile(fileId) ) {
+      return blocklyEditor.getCppCode();
+    } else {
+      return inoEditor.getCppCode();
+    }
+  };
+
+  async openFile(fileId) { 
+    if (leanfs.isDir(fileId)) return; // avoid if a folder is passed
+
+    if (!inoEditor.__isMonacoReady || !inoEditor) {
+      window.__pendingOpenFileId = fileId;
+      return;
+    }
+
+    const content = await leanfs.readFile(fileId) ?? "";
+    await changeCurrentFileId(fileId);
+
+    // console.log("openFile");
+    // console.log(fileId, leanfs.getName(fileId), leanfs.getItemType(fileId));
+
+    if ( fileId && leanfs.isBlocklyFile(fileId) ) {
+      this.#openInBlockly(content);
+    } else {
+      this.#openInMonaco(content);
+    }
+
+    saveCurrentFileID(); // save current file uuid to local storage
+  }
+
+  /* ================= INTERNAL ================= */
+  #openInMonaco(content) {
+    document.getElementById("codeEditor").style.display    = "block";  // show Monaco
+    document.getElementById("blocklyEditor").style.display = "none";   // hide Blockly
+    inoEditor.setContent(content);
+  }
+
+  #openInBlockly(content) {
+    document.getElementById("codeEditor").style.display    = "none";  // hide Monaco
+    document.getElementById("blocklyEditor").style.display = "block"; // show Blockly
+    if ( ! blocklyEditor.setContent(content) ) {
+      openInMonaco(content);  // fallback to Monaco if failed
+    }
+  }
+}
+
+const inoEditor     = new InoEditor();
 const blocklyEditor = new BlocklyEditor();
+
+const globalEditor  = new GlobalEditor();  // wrapper for all editor types
+
 
 // ============================================================
 // LEANBOT CONNECTION
@@ -186,29 +288,55 @@ const UploaderCompileLog   = document.getElementById("compileLog");
 const UploaderCompileTitle = document.getElementById("compileTitle");
 const UploaderCompileProg  = document.getElementById("progCompile");
 
+let currentCompileCode = null; // Use to capture snapshot of the source code being compiled
+
+window.treelocked = false; // Global UI lock flag to prevent workspace navigation or mutation
+
+function setUICompileAndBuildEnabled(enable){
+  
+  // Compile / Upload actions
+  btnCompile.disabled = !enable;
+  btnUpload.disabled  = !enable;
+
+  window.treelocked = !enable;    // Lock file tree to prevent switching files, renaming
+
+  btnNewFile.disabled  = !enable;  // Disable workspace mutation actions (create / import)
+  btnNewBlocklyFile.disabled = !enable;
+  btnNewFolder.disabled  = !enable; 
+  btnLoadFile.disabled = !enable;
+}
+
 btnCompile.addEventListener("click", async () => {
   await doCompile();
 });
 
-let currentCompileCode = null; // Use to capture snapshot of the source code being compiled
-
-async function doCompile() {
-  // check by file extension
-  const sourceCode = isXmlFile(window.currentFileId) ? blocklyEditor.getCppCode() : inoEditor.getCppCode();
-  // console.log(sourceCode);
-
-  currentCompileCode = sourceCode;
+function getSourceCode(){
+  const sourceCode = globalEditor.getCppCode();
   if (!sourceCode || sourceCode.trim() === "") {
     alert("No code to compile!");
     return null;
   }
+  currentCompileCode = sourceCode;
+  return sourceCode;
+}
+
+async function CompileUploadLock(fn){
+  setUICompileAndBuildEnabled(false);
+  try { return await fn(); }
+  finally { setUICompileAndBuildEnabled(true); }
+}
+
+async function doCompile() {
+  
+  const sourceCode = getSourceCode();
+  if (!sourceCode) return null;
 
   compileStart = performance.now();
   ProgramTab.classList.add("hide-upload");
   uiSetTab("program");
   uiResetCompile();
 
-  return await leanbot.Compiler.compile(sourceCode, window.SERVER);
+  return await CompileUploadLock(() =>leanbot.Compiler.compile(sourceCode)); // Run compiler 
 }
 
 leanbot.Compiler.onCompileSucess = (compileMessage) => {
@@ -218,15 +346,13 @@ leanbot.Compiler.onCompileSucess = (compileMessage) => {
     objectpk: "compile_res",
     thongtin: CompileCode,
     noidung: compileMessage,
-    server_: window.SERVER,
+    server_: IDEConfig.LeanbotCompiler.Server,
     t_phanhoi: Math.round(leanbot.Compiler.elapsedTimeMs())
   };
   logLbIDEEvent(LbIDEEvent);
 
   UploaderCompileLog.value = compileMessage;
   UploaderCompileTitle.className = "green";
-
-  saveWorkspaceFilesToLocalStorage(); // Lưu workspace khi compile thành công
 
   if (!isCompileAndUpload) return;
   uploadStart = performance.now(); // reset upload start time
@@ -240,7 +366,7 @@ leanbot.Compiler.onCompileError = (compileMessage) => {
     objectpk: "compile_err",
     thongtin: CompileCode,
     noidung: compileMessage,
-    server_: window.SERVER,
+    server_: IDEConfig.LeanbotCompiler.Server,
     t_phanhoi: Math.round(leanbot.Compiler.elapsedTimeMs())
   };
   logLbIDEEvent(LbIDEEvent);
@@ -269,11 +395,8 @@ btnUpload.addEventListener("click", async () => {
     return;
   }
 
-  const sourceCode = isXmlFile(window.currentFileId) ? blocklyEditor.getCppCode() : inoEditor.getCppCode();
-  if (!sourceCode || sourceCode.trim() === "") {
-    alert("No code to compile!");
-    return null;
-  }
+  const sourceCode = getSourceCode();
+  if (!sourceCode) return null;
 
   compileStart = performance.now();
   ProgramTab.classList.remove("hide-upload"); // Hiện phần upload
@@ -282,7 +405,7 @@ btnUpload.addEventListener("click", async () => {
   uiResetUpload();
   isCompileAndUpload = true;
 
-  await leanbot.compileAndUpload(sourceCode, window.SERVER);
+  await CompileUploadLock(() => leanbot.compileAndUpload(sourceCode, IDEConfig.LeanbotCompiler.Server));
 });
 
 // =================== Upload DOM Elements =================== //
@@ -339,12 +462,24 @@ function uiUpdateProgress(element, progress, total) {
 }
 
 // =================== Uploader Event Handlers =================== //
-leanbot.Uploader.onMessage = ({ timeStamp, message }) => {
+// leanbot.Uploader.onMessage = ({ timeStamp, message }) => {
+//   uiUpdateTime(uploadStart, UploaderTimeUpload);
+
+//   const msg = `[${(timeStamp / 1000).toFixed(3)}] ${message}`;
+
+//   UploaderLogUpload.value += "\n" + msg;
+//   UploaderLogUpload.scrollTop = UploaderLogUpload.scrollHeight;
+// };
+
+leanbot.Uploader.onMessage = input => {
   uiUpdateTime(uploadStart, UploaderTimeUpload);
 
-  const msg = `[${(timeStamp / 1000).toFixed(3)}] ${message}`;
+  const line =
+    typeof input === "string"
+      ? input
+      : `[${(input.timeStamp / 1000).toFixed(3)}] ${input.message}`;
 
-  UploaderLogUpload.value += "\n" + msg;
+  UploaderLogUpload.value += "\n" + line;
   UploaderLogUpload.scrollTop = UploaderLogUpload.scrollHeight;
 };
 
@@ -422,6 +557,9 @@ const monitorPanel   = document.getElementById("monitorPanel");
 const tabs           = document.querySelectorAll("#serialTabs .serial-tab");
 const btnCloseSerial = document.getElementById("btnCloseSerial");
 
+const editorSection = document.getElementById('editorSection');
+const autoHideCheckbox = document.getElementById('autoHideSerial');
+
 function openSerial() {
   workspace.classList.add("serial-open");
   serialSection.classList.remove("is-hidden");
@@ -451,7 +589,9 @@ function uiSetTab(name) {
 
 // Click SERIAL → mở PROGRAM
 btnSerial.addEventListener("click", () => {
-  uiSetTab("monitor");
+  const isOpen = workspace.classList.contains("serial-open");
+  if(!isOpen)openSerial();
+  else closeSerial();
 });
 
 // Click tab
@@ -461,6 +601,15 @@ tabs.forEach(tab => {
   });
 });
 
+editorSection.addEventListener('pointerdown', (e) => {
+  if (!autoHideCheckbox.checked) return;
+
+  // nếu serial đang mở thì mới hide
+  if (!serialSection.classList.contains('is-hidden')) {
+    closeSerial();
+  }
+});
+
 // ============================================================
 // MONACO EDITOR (ARDUINO)
 // ============================================================
@@ -468,43 +617,76 @@ tabs.forEach(tab => {
 await inoEditor.attach(document.getElementById("codeEditor"));
 
 if (window.__pendingOpenFileId) {
-  const id = window.__pendingOpenFileId;
+  const uuid = window.__pendingOpenFileId;
   window.__pendingOpenFileId = null;
-  openFileInEditor(id);
+  await globalEditor.openFile(uuid);
 }
 
 // Autosave nội dung từ Monaco về fileContents
-const AutoSaveDelayMs = 10000; // 10 giây
 let saveTimer = null;
 
 inoEditor.onChangeContent = () =>  {
-  const id = window.currentFileId;
-  if (!id) return;
+  const uuid = window.currentFileId;
+  if (!uuid) return;
 
-  fileContents[id] = inoEditor.getContent();
-
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveWorkspaceFilesToLocalStorage, AutoSaveDelayMs); // save after 10000ms of inactivity
-}
-
-window.onChangeBlockly = function (fileId) {
-  const id = fileId;
-  if (!id) return;
-
-  fileContents[id] = blocklyEditor.getContent();
+  const currentfileContents = inoEditor.getContent();
 
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveWorkspaceFilesToLocalStorage, AutoSaveDelayMs); // save after 10000ms of inactivity
+  saveTimer = setTimeout(async () => {await leanfs.writeFile(uuid, currentfileContents)}, IDEConfig.Editor.AutoSaveDelayMs); // save after 10000ms of inactivity
 }
 
 // ============================================================
-//  FILE TREE Root Data
+// BLOCKLY EDITOR
+// ============================================================
+
+window.onChangeBlockly = function (fileId) {
+  const uuid = fileId;
+  if (!uuid) return;
+
+  const currentfileContents = blocklyEditor.getContent();
+
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {await leanfs.writeFile(uuid, currentfileContents)}, IDEConfig.Editor.AutoSaveDelayMs); // save after 10000ms of inactivity
+}
+
+
+// ============================================================
+// EDITOR WRAPPER
+// ============================================================
+
+
+
+// ============================================================
+// Restore Current ID
+// ============================================================
+
+const CURRENT_FILEID_KEY = "LeanFs10_current_fileID";
+
+window.currentFileId = localStorage.getItem(CURRENT_FILEID_KEY) || leanfs.getRoot() || null;
+
+function saveCurrentFileID(){
+  localStorage.setItem(CURRENT_FILEID_KEY, window.currentFileId);
+}
+
+async function changeCurrentFileId(newFileId){
+  if (newFileId === window.currentFileId) return;
+
+  const content = globalEditor.getContent();
+  await leanfs.writeFile(window.currentFileId, content);
+  window.currentFileId = newFileId;
+}
+
+// ============================================================
+// WORKSPACE BOOTSTRAP & INVARIANTS
+// - Load .ino templates
+// - Ensure workspace always contains at least one .ino file
 // ============================================================
 
 // Templates ino
-const inoTemplates = {
+const fileTemplates = {
   basicMotion: "",
-  default: ""
+  default: "",
+  defaultBlockly: ""
 };
 
 async function loadText(url) {
@@ -515,236 +697,52 @@ async function loadText(url) {
   return await res.text();
 }
 
-async function initInoTemplates() {
-  inoTemplates.basicMotion = await loadText("./TemplateSourceCode/BasicMotion.ino");
-  inoTemplates.default     = await loadText("./TemplateSourceCode/Default.ino");
+async function initfileTemplates() {
+  fileTemplates.basicMotion = await loadText("./TemplateSourceCode/BasicMotion.ino");
+  fileTemplates.default     = await loadText("./TemplateSourceCode/Default.ino");
+  fileTemplates.defaultBlockly = await loadText("./TemplateSourceCode/DefaultBlockly.bduino");
 }
 
-await initInoTemplates();
+await initfileTemplates();
+
+const { UncontrolledTreeEnvironment, Tree, StaticTreeDataProvider } = window.ReactComplexTree;
+const dataProvider = new StaticTreeDataProvider(leanfs.getItems(), (item, data) => ({ ...item, data }));
+const emitChanged = (ids) => dataProvider.onDidChangeTreeDataEmitter.emit(ids);
 
 // Trạng thái Monaco
 window.__pendingOpenFileId = window.__pendingOpenFileId ?? null;
 
-function createUUID() {
-  return crypto.randomUUID();
+// Create basicMotion.ino if there isnt any .ino file in the workspace
+
+if (!leanfs.hasAnyFileOfType(LeanFs.leanfs_TYPE.INO)) { // If no .ino file exists, create a default basicMotion.ino directly at root
+  console.log("[LS] No .ino file found, creating default BasicMotion.ino");
+  const uuid = await leanfs.createFile(leanfs.getRoot());
+  await leanfs.rename(uuid, "BasicMotion.ino");
+  await leanfs.writeFile(uuid, fileTemplates.basicMotion || "");
+  await changeCurrentFileId(uuid);
 }
 
-// Tạo dữ liệu tree
-const items = {
-  root: {
-    index: "root",
-    isFolder: true,
-    children: [],
-    data: "Workspace"
-  },
-};
-
-// nội dung file, key theo id file (item.index)
-const fileContents = {};
-
-function isFolder(id) {
-  return !!id && !!items[id] && items[id].isFolder === true;
-}
-
-function isInoFile(id) {
-  if (!id || !items[id]) return false;
-
-  const it = items[id];
-  if (!it || it.isFolder) return false;
-
-  const name = String(it.data || "").trim().toLowerCase();
-  return name.endsWith(".ino");
-}
-
-function isXmlFile(id) {
-  if (!id || !items[id]) return false;
-
-  const it = items[id];
-  if (!it || it.isFolder) return false;
-
-  const name = String(it.data || "").trim().toLowerCase();
-  return name.endsWith(".xml") || name.endsWith(".bduino");
-}
+await globalEditor.openFile(window.currentFileId || null); 
+// Reopen the item that was last opened in the previous session.
+// If no workspace exists (first time opening the editor), open basicMotion.ino.
 
 // ============================================================
-//  LOCALSTORAGE (WORKSPACE)
-// ============================================================
-
-const LS_KEY_TREE  = "leanbot_workspace_tree";
-const LS_KEY_FILES = "leanbot_workspace_files";
-
-function saveWorkspaceTreeToLocalStorage() {
-  const data = {
-    items,
-    currentFileId: window.currentFileId
-  };
-
-  localStorage.setItem(LS_KEY_TREE, JSON.stringify(data));
-}
-
-function saveWorkspaceFilesToLocalStorage() {
-  const data = {
-    fileContents,
-    currentFileId: window.currentFileId
-  };
-
-  localStorage.setItem(LS_KEY_FILES, JSON.stringify(data));
-}
-
-function hasAnyInoFile() { // Check if there is any .ino file in the workspace
-  for (const id in items) {
-    if (!isInoFile(id)) continue;
-    return true;
-  }
-  return false;
-}
-
-function loadWorkspaceFromLocalStorage() {
-  try {
-    const rawTree  = localStorage.getItem(LS_KEY_TREE);
-    const rawFiles = localStorage.getItem(LS_KEY_FILES);
-
-    if(rawTree === null && rawFiles === null) { // no workspace found
-      console.log("[LS] No workspace found in localStorage");
-      return;
-    }
-
-    if (rawTree) {
-      const data = JSON.parse(rawTree);
-
-      Object.keys(items).forEach(k => delete items[k]);
-      Object.assign(items, data.items || {});
-
-      window.currentFileId = data.currentFileId || window.currentFileId;
-    }
-
-    if (rawFiles) {
-      const data = JSON.parse(rawFiles);
-
-      Object.keys(fileContents).forEach(k => delete fileContents[k]);
-      Object.assign(fileContents, data.fileContents || {});
-
-      window.currentFileId = data.currentFileId || window.currentFileId;
-    }
-    console.log("[LS] Workspace restored");
-  } catch (e) {
-    console.log("[LS] Restore failed", e);
-  }
-  finally {
-    if (!hasAnyInoFile()) { // If no .ino file exists, create a default basicMotion.ino directly at root
-      console.log("[LS] No .ino file found, creating default BasicMotion.ino");
-      const id = createUUID();
-      items[id] = {
-        index: id,
-        isFolder: false,
-        children: [],
-        data: "BasicMotion.ino",
-        parent: "root",
-      };
-      
-      items.root.children ||= [];
-      if (!items.root.children.includes(id)) {
-        items.root.children.push(id);
-      }
-
-      fileContents[id] = inoTemplates.basicMotion || "";
-      window.currentFileId = id;
-    }
-    rebuildParents();
-    saveWorkspaceTreeToLocalStorage();
-    saveWorkspaceFilesToLocalStorage();
-  }
-}
-
-loadWorkspaceFromLocalStorage();
-window.__pendingOpenFileId = window.currentFileId || null;
-
-// ============================================================
-//  FILE TREE + WORKSPACE management
+//  FILE TREE management
 // ============================================================
 
 // track focus, selection để tạo file, folder, move đúng vị trí
 let lastFocusedId    = window.currentFileId; 
 let lastSelectedIds  = [window.currentFileId];
 
-// Gắn parent cho mỗi node, để move nhanh
-function rebuildParents() {
-  for (const id in items) items[id].parent = null;
-  for (const id in items) {
-    const ch = items[id].children;
-    if (!Array.isArray(ch)) continue;
-    for (const cid of ch) if (items[cid]) items[cid].parent = id;
-  }
-}
-rebuildParents();
-
-function getAncestorFolders(id) {
-
-  if (!id || !items[id]) return []; // incase id is null or invalid
-
-  const out = [];
-  let p = items[id]?.parent;
-
-  while (p && p !== "root") {
-    out.unshift(p);
-    p = items[p]?.parent;
-  }
-  return out;
-}
-
-const { UncontrolledTreeEnvironment, Tree, StaticTreeDataProvider } = window.ReactComplexTree;
-const dataProvider = new StaticTreeDataProvider(items, (item, data) => ({ ...item, data }));
-const emitChanged = (ids) => dataProvider.onDidChangeTreeDataEmitter.emit(ids);
-
-function openFileInMonaco(content) {
-  document.getElementById("codeEditor").style.display    = "block";  // show Monaco
-  document.getElementById("blocklyEditor").style.display = "none";   // hide Blockly
-
-  inoEditor.setContent(content);
-  inoEditor.setReadOnly(false); // exit read-only mode when open file
-}
-
-function openFileInBlockly(content) {
-  document.getElementById("codeEditor").style.display    = "none";  // hide Monaco
-  document.getElementById("blocklyEditor").style.display = "block"; // show Blockly
-
-  if ( blocklyEditor.setContent(content) ) {
-    // console.log("openFileInBlockly");
-  } else {
-    openFileInMonaco(content);  // switch to Monaco if failed
-  }
-}
-
-function openFileInEditor(fileId) {
-  if (isFolder(fileId)) return; // avoid if a folder is passed
-
-  if (!inoEditor.__isMonacoReady|| !inoEditor) {
-    window.__pendingOpenFileId = fileId;
-    return;
-  }
-
-  const content = fileContents[fileId] ?? "";
-  window.currentFileId = fileId;
-
-  // check by file extension
-  if ( isXmlFile(fileId) ) {
-    openFileInBlockly(content)
-  } else {
-    openFileInMonaco(content)
-  }
-
-  saveWorkspaceFilesToLocalStorage();
-}
-
 // Lấy folder đích để thêm file, folder
 function getTargetFolderId() {
-  const focus = items[lastFocusedId] ? lastFocusedId : "root";
-  if (isFolder(focus)) return focus;
+  const focus = leanfs.isExist(lastFocusedId)? lastFocusedId : leanfs.getRoot();
+  if (leanfs.isDir(focus)) return focus;
 
-  const parent = items[focus]?.parent;
-  if (isFolder(parent)) return parent;
+  const parent = leanfs.getParent(focus);
+  if (leanfs.isDir(parent)) return parent;
 
-  return "root";
+  return leanfs.getRoot();
 }
 
 // Import local file into tree
@@ -757,7 +755,7 @@ btnLoadFile.addEventListener("click", async () => {
   if (!loaded) return;
 
   // chuyển cho FILE TREE tạo file mới + mở trong Monaco
-  window.importLocalFileToTree?.(loaded);
+  await window.importLocalFileToTree?.(loaded);
 });
 
 // Hàm load file và trả về đối tượng { fileName, ext, text }
@@ -779,42 +777,32 @@ async function loadFile() {
 }
 
 // Nhận file local đã đọc từ loadFile() và tạo file mới trong tree
-window.importLocalFileToTree = (loaded) => {
+window.importLocalFileToTree = async (loaded) => {
   if (!loaded) return;
 
-  const fileName = String(loaded.fileName || getTimestampName() + ".ino");
+  // const fileName = String(loaded.fileName || getTimestampName() + ".ino");
+  const fileName =   loaded.fileName == null? null: String(loaded.fileName);
   const text = String(loaded.text ?? "");
 
   const parentId = getTargetFolderId();
 
-  const id = createUUID();
+  const uuid = await leanfs.createFile(parentId);
+  await leanfs.rename(uuid, fileName);
 
-  items[id] = {
-    index: id,
-    isFolder: false,
-    children: [],
-    data: fileName,
-    parent: parentId
-  };
+  await leanfs.writeFile(uuid, text);
 
-  items[parentId].children ||= [];
-  items[parentId].children.push(id);
+  emitChanged([parentId, uuid]);
 
-  fileContents[id] = text;
-
-  emitChanged([parentId, id]);
-
-  pendingTreeFocusId = id;
-  openFileInEditor(id);
-  saveWorkspaceTreeToLocalStorage();
+  pendingTreeFocusId = uuid;
+  await globalEditor.openFile(uuid);
 };
-
 
 // Drag & Drop file vào file tree
 const fileTreePanel = document.getElementById("fileTreePanel");
 
 function isValidDropFile(file) {
-  if (!file || !file.name) return false;
+  if (!file) return false;
+  if (!file.name) return false;
   const name = file.name.toLowerCase();
   return name.endsWith(".ino") || name.endsWith(".h") || name.endsWith(".cpp") || name.endsWith(".c");
 }
@@ -841,7 +829,7 @@ fileTreePanel?.addEventListener("drop", async (e) => {
 
     try {
       const text = await readFileAsText(f);
-      window.importLocalFileToTree?.({
+      await window.importLocalFileToTree?.({
         fileName: f.name,
         ext: (f.name.split(".").pop() || "").toLowerCase(),
         text
@@ -865,378 +853,254 @@ function readFileAsText(file) {
 
 // ===== sync state tree (selected, focused) cho thao tác ngoài tree =====
 window.__rctItemActions ||= new Map();
-const rememberItemActions = (id, ctx) => id && ctx && window.__rctItemActions.set(id, ctx);
+const rememberItemActions = (uuid, ctx) => uuid && ctx && window.__rctItemActions.set(uuid, ctx);
 
 let pendingTreeFocusId = null;
 
-function focusTreeItemNow(id) {
-  const ctx = window.__rctItemActions.get(id);
+function focusTreeItemNow(uuid) {
+  const ctx = window.__rctItemActions.get(uuid);
   if (!ctx) return false;
 
   try { ctx.focusItem?.(); } catch (e) {}
   try { ctx.selectItem?.(); } catch (e) {}
 
-  lastFocusedId = id;
-  lastSelectedIds = [id];
+  lastFocusedId = uuid;
+  lastSelectedIds = [uuid];
   return true;
-}
-
-function requestTreeFocus(id) {
-  if (!id || !items[id]) return;
-
-  // Ensure visibility
-  const parent = items[id].parent;
-  if (parent) expandFolderChain(parent);
-
-  // Request focus (deferred)
-  pendingTreeFocusId = id;
-
-  // Force tree to re-render so renderItem can consume the request
-  emitChanged([parent || "root", id]);
 }
 
 let pendingTreeRenameId = null;
 
-function nameExistsInFolder(parentId, name) {
-  const p = items[parentId];
-  if (!p || !Array.isArray(p.children)) return false;
-
-  const target = String(name || "").trim().toLowerCase();
-  for (const cid of p.children) {
-    const it = items[cid];
-    if (!it) continue;
-    const n = String(it.data || "").trim().toLowerCase();
-    if (n === target) return true;
-  }
-  return false;
-}
-
-// "2025.12.31-08.44.ino" -> "2025.12.31-08.44 (1).ino"
-function makeUniqueDisplayName(parentId, desiredName) {
-  let name = String(desiredName || "").trim();
-  if (name === "") name = getTimestampName() + ".ino";
-
-  if (!nameExistsInFolder(parentId, name)) return name;
-
-  const m = name.match(/^(.*?)(\.[a-z0-9]+)$/i);
-  const base = m ? m[1] : name;
-  const ext  = m ? m[2] : "";
-
-  let i = 1;
-  while (true) {
-    const candidate = `${base} (${i})${ext}`;
-    if (!nameExistsInFolder(parentId, candidate)) return candidate;
-    i++;
-  }
-}
-
 // Mở folder nếu nó đang collapsed
 function expandFolderChain(folderId) {
-  let id = folderId; 
+  let uuid = folderId; 
 
-  while (id && id !== "root") {
-    const ctx = window.__rctItemActions.get(id);
+  while (uuid && uuid !== leanfs.getRoot()) {
+    const ctx = window.__rctItemActions.get(uuid);
     try { ctx?.expandItem?.(); } catch (e) {} 
-    id = items[id]?.parent;
+    uuid = leanfs.getParent(uuid);
   }
 }
 
-function getFolderContent(folderId, childIndex = 0, prefix = "", lines = null) {
-  if (!isFolder(folderId)) return;
+const btnShowTree = document.getElementById('btnShowTree');
+const editorRow   = document.getElementById('editorRow');
 
-  const isRoot = lines === null;
-  if (isRoot) lines = [];
-
-  const folder = items[folderId];
-  const children = folder.children || [];
-
-  // Root header
-  if (isRoot && childIndex === 0) {
-    lines.push(prefix + folder.data + "/");
-  }
-
-  // Stop
-  if (childIndex >= children.length) {
-    if (isRoot) {
-      lines.push("\t" + "Folder Empty");
-    }
-    window.currentFileId = folderId;
-    inoEditor.setContent(lines.join("\n"));
-    inoEditor.setReadOnly(true);
-    return;
-  }
-
-  const cid = children[childIndex];
-  const child = items[cid];
-  if (!child) {
-    return getFolderContent(folderId, childIndex + 1, prefix, lines);
-  }
-
-  const isLast = childIndex === children.length - 1;
-  const connector = isLast ? "└─ " : "├─ ";
-
-  // Render ONLY this level
-  lines.push(prefix + connector + child.data + (child.isFolder ? "/" : ""));
-
-  // Tail recursion: next sibling
-  return getFolderContent(folderId, childIndex + 1, prefix, lines);
-}
-
-// Thêm file, folder
-function createItem(isFolder, defaultName) {
-  const parentId = getTargetFolderId();
-  console.log("[CREATE] target parentId =", parentId);
-
-  let name = String(defaultName || "").trim();
-  if (!isFolder) name = ensureInoExtension(name);
-
-  name = makeUniqueDisplayName(parentId, name);
-
-  const id = createUUID();
-
-  items[id] = { index: id, isFolder, children: [], data: name, parent: parentId };
-  console.log("[CREATE] item.parent =", items[id].parent);
-  items[parentId].children ||= [];
-  items[parentId].children.push(id);
-  console.log(
-    "[CHECK] parent contains child =",
-    items[parentId].children.includes(id)
-  );
-
-  if (!isFolder) fileContents[id] = inoTemplates.default || "";
-
-  emitChanged([parentId, id]);
-
-  // Mở chain folder cha để nhìn thấy item mới
-  // Nếu tạo folder, mở luôn chính folder đó
-  setTimeout(() => {
-    expandFolderChain(parentId);
-
-    if (isFolder) {
-      try {
-        getFolderContent(id); // in folder structure to console
-        const ctx = window.__rctItemActions.get(id);
-        ctx?.expandItem?.();
-      } catch (e) {
-        console.log("[TREE] expand new folder failed =", id, e);
-      }
-    }
-  }, 0);
-
-  pendingTreeRenameId = id;
-  pendingTreeFocusId  = id;
-
-  if (!isFolder) openFileInEditor(id);
-  saveWorkspaceTreeToLocalStorage();
-}
+btnShowTree.addEventListener('click', () => {
+  editorRow.classList.toggle('tree-collapsed');
+});
 
 const btnNewFile = document.getElementById("btnNewFile");
 const btnNewFolder = document.getElementById("btnNewFolder");
+const btnNewBlocklyFile = document.getElementById("btnNewBlocklyFile");
 
-function getTimestampName() {
-  const d = new Date();
+btnNewFile?.addEventListener("click", async () => {
+  const parentId = getTargetFolderId();
+  // console.log("[CREATE] target parentId =", parentId);
 
-  const yyyy = d.getFullYear();
-  const mm   = String(d.getMonth() + 1).padStart(2, "0");
-  const dd   = String(d.getDate()).padStart(2, "0");
+  const itemUUID = await leanfs.createFile(parentId); // Create a file
+  const newname = NameEnsureExtension(itemUUID, '.ino');
+  console.log("new file name:", newname);
+  await leanfs.rename(itemUUID, newname);             // rename it to somename with .ino (for example: "2025.12.31-08.44.22.ino")
+  await leanfs.writeFile(itemUUID, fileTemplates.default || ""); // content = deafult.ino
+  
+  emitChanged([parentId, itemUUID]);
+  
+  pendingTreeRenameId = itemUUID;
+  pendingTreeFocusId  = itemUUID;
 
-  const hh   = String(d.getHours()).padStart(2, "0");
-  const mi   = String(d.getMinutes()).padStart(2, "0");
-  const sec  = String(d.getSeconds()).padStart(2, "0");
-
-  return `${yyyy}.${mm}.${dd}-${hh}.${mi}.${sec}`;
-}
-
-btnNewFile?.addEventListener("click", () => {
-  const name = getTimestampName() + ".ino";
-  console.log("Creating new file:", name);
-  createItem(false, name);
+  await globalEditor.openFile(itemUUID);
 });
 
-btnNewFolder?.addEventListener("click", () => {
-  const name = getTimestampName();
-  console.log("Creating new folder:", name);
-  createItem(true, name);
+btnNewBlocklyFile?.addEventListener("click", async () => {
+  const parentId = getTargetFolderId();
+  // console.log("[CREATE] target parentId =", parentId);
+
+  const itemUUID = await leanfs.createFile(parentId); // Create a file
+  const newname = NameEnsureExtension(itemUUID, '.bduino');
+  console.log("new file name:", newname);
+  await leanfs.rename(itemUUID, newname);             // rename it to somename with .bduino(for example: "2025.12.31-08.44.22.bduino")
+  await leanfs.writeFile(itemUUID, fileTemplates.defaultBlockly || ""); // content = DefaultBlockly.bduino
+  
+  emitChanged([parentId, itemUUID]);
+  
+  pendingTreeRenameId = itemUUID;
+  pendingTreeFocusId  = itemUUID;
+
+  await globalEditor.openFile(itemUUID);
 });
 
-function ensureInoExtension(name) {
-  const n = String(name || "").trim();
-  if (n === "") return getTimestampName() + ".ino";
+btnNewFolder?.addEventListener("click", async () => {
+ const parentId = getTargetFolderId();
+  // console.log("[CREATE] target parentId =", parentId);
 
-  // nếu đã có .ino thì giữ nguyên
-  if (n.toLowerCase().endsWith(".ino")) return n;
+  const itemUUID = await leanfs.createDir(parentId); // Create a dir, default name: "2025.12.31-08.44.22"
 
-  // không có đuôi → tự thêm .ino
-//return n + ".ino";
+  emitChanged([parentId, itemUUID]);
 
-  return n;  // workaroud to allow *.xml extension
-}
-
-// rename file bằng F2
-function renameFileId(id, newDisplayName) {
-  const item = items[id];
-  if (!item) return;
-
-  if (item.index === "root") return; // NEVER rename root
-
-  if (!isFolder(id)) {
-    newDisplayName = ensureInoExtension(newDisplayName);
-  }
-
-  item.data = newDisplayName;
-  emitChanged([id]);
-
-  pendingTreeFocusId = id;
-  saveWorkspaceTreeToLocalStorage();
-}
-
-// drag drop, reorder, move folder
-function removeFromParent(childId) {
-  let removedParent = null;
-
-  const p = items[childId]?.parent;
-  if (p && items[p]?.children) {
-    const list = items[p].children;
-    const before = list.length;
-    items[p].children = list.filter((x) => x !== childId);
-    if (items[p].children.length !== before) removedParent = p;
-  }
-
-  // fallback: nếu parent bị sai, quét toàn bộ folder để xóa mọi chỗ đang chứa childId
-  for (const id in items) {
-    const it = items[id];
-    if (!isFolder(id) || !Array.isArray(it.children)) continue;
-
-    const before = it.children.length;
-    it.children = it.children.filter((x) => x !== childId);
-    if (it.children.length !== before) removedParent = removedParent || id;
-  }
-
-  return removedParent;
-}
-
-function insertIntoFolder(folderId, childId, index) {
-  if (!isFolder(folderId)) return;
-
-  const f = items[folderId];
-
-  f.children ||= [];
-
-  f.children = f.children.filter((x) => x !== childId);
-
-  let idx = Number.isFinite(index) ? index : f.children.length;
-  if (idx < 0) idx = 0;
-  if (idx > f.children.length) idx = f.children.length;
-
-  f.children.splice(idx, 0, childId);
-  items[childId].parent = folderId;
-}
-
-function isDescendantOf(candidateChild, candidateParent) {
-  let p = items[candidateChild]?.parent;
-  while (p) {
-    if (p === candidateParent) return true;
-    p = items[p]?.parent;
-  }
-  return false;
-}
-
-function handleDrop(itemsDragged, target) {
-  if (!target) return;
-
-  const draggedIds = Array.from(new Set((itemsDragged || []).map(x => x.index)));
-
-  // Xác định folder đích và vị trí chèn
-  let destFolderId = "root";
-  let insertIndex = 0;
-
-  if (target.targetType === "between-items") {
-    // Thả giữa các item, dùng parentItem và childIndex
-    destFolderId = target.parentItem || "root";
-    insertIndex = Number.isFinite(target.childIndex)
-      ? target.childIndex
-      : (items[destFolderId]?.children?.length ?? 0);
-
-  } else {
-    // Thả lên item cụ thể
-    const targetId = target.targetItem;
-    const targetItem = items[targetId];
-
-    console.log("Target item:", targetItem);
-
-    if (!targetItem) return;
-
-    destFolderId = isFolder(targetId) ? targetId : (targetItem.parent || "root");
-    insertIndex = Number.isFinite(target.childIndex)
-      ? target.childIndex
-      : (items[destFolderId]?.children?.length ?? 0);
-  }
-
-  // Chặn kéo folder vào chính con của nó
-  for (const id of draggedIds) {
-    if (id === destFolderId) return;
-    if (isFolder(id) && isDescendantOf(destFolderId, id)) return;
-  }
-
-  const changed = new Set([destFolderId]);
-
-  // Bỏ khỏi parent cũ
-  for (const id of draggedIds) {
-    const oldParent = removeFromParent(id);
-    if (oldParent) changed.add(oldParent);
-  }
-
-  // Chèn vào folder đích theo thứ tự
-  draggedIds.forEach((id, i) => {
-    insertIntoFolder(destFolderId, id, insertIndex + i);
-    changed.add(id);
-  });
-
-  rebuildParents();
-  emitChanged(Array.from(changed));
-  saveWorkspaceTreeToLocalStorage();
-
-  setTimeout(() => {
-    expandFolderChain(destFolderId);
-
-    if (draggedIds.length === 1) {
-      const movedId = draggedIds[0];
-      const movedItem = items[movedId];
-      if (!movedItem) return;
-
-      pendingTreeFocusId = movedId;
-
-      // Nếu là folder: mở luôn folder đó
-      if (isFolder(movedId)) {
-        try {
-          const ctx = window.__rctItemActions.get(movedId);
-          ctx?.expandItem?.();
-          console.log("[MOVE] expanded moved folder =", movedId);
-        } catch (e) {
-          console.log("[MOVE] expand moved folder failed =", movedId, e);
-        }
-        return;
-      }
-
-      // Nếu là file: mở file, đồng thời folder cha đã được expand ở trên
-      console.log("[MOVE] open moved file =", movedId, "parent =", movedItem.parent);
-      openFileInEditor(movedId);
+ // Mở chain folder cha để nhìn thấy item mới
+  // Nếu tạo folder, mở luôn chính folder đó
+  setTimeout(async () => {
+    expandFolderChain(parentId);
+    try {
+      const folderContent = leanfs.readDir(itemUUID); // in folder structure to console
+      await changeCurrentFileId(itemUUID);
+      globalEditor.setContentReadOnly(folderContent);
+      const ctx = window.__rctItemActions.get(itemUUID);
+      ctx?.expandItem?.();
+    } catch (e) {
+      console.log("[TREE] expand new folder failed =", itemUUID, e);
     }
   }, 0);
+  
+  pendingTreeRenameId = itemUUID;
+  pendingTreeFocusId  = itemUUID;
+});
+
+// rename file bằng F2
+async function renameFileId(uuid, newDisplayName) {
+  
+  if (leanfs.isExist(uuid) === false) return;
+
+  await leanfs.rename(uuid, newDisplayName);
+
+  // Rename a folder in root to LocalConfigName => auto  Create LocalConfig File
+  if(newDisplayName === LocalConfigName && leanfs.getParent(uuid) == leanfs.getRoot()){ // Creat localConfigFolder => also create localConfigFile.yaml
+    console.log("Auto Create Local Config File");
+    const childUUID = await leanfs.createFile(uuid); // Create a file
+    await leanfs.rename(childUUID,  `${LocalConfigName}.yaml`);    // rename
+    await leanfs.writeFile(childUUID, Config.getUserConfigFile()); // copy content of UserConfigFile
+  
+    emitChanged([uuid, childUUID]);
+  
+    pendingTreeFocusId  = childUUID;
+    await globalEditor.openFile(childUUID);
+    return;
+  }
+
+  emitChanged([uuid]);
+  pendingTreeFocusId = uuid;
 }
+
+// function insertIntoFolder(folderId, childId, index) {
+//   if (!isFolder(folderId)) return;
+
+//   const f = items[folderId];
+
+//   f.children ||= [];
+
+//   f.children = f.children.filter((x) => x !== childId);
+
+//   let idx = Number.isFinite(index) ? index : f.children.length;
+//   if (idx < 0) idx = 0;
+//   if (idx > f.children.length) idx = f.children.length;
+
+//   f.children.splice(idx, 0, childId);
+//   items[childId].parent = folderId;
+// }
+
+// function isDescendantOf(candidateChild, candidateParent) {
+//   let p = items[candidateChild]?.parent;
+//   while (p) {
+//     if (p === candidateParent) return true;
+//     p = items[p]?.parent;
+//   }
+//   return false;
+// }
+
+// async function handleDrop(itemsDragged, target) {
+//   if (!target) return;
+
+//   const draggedIds = Array.from(new Set((itemsDragged || []).map(x => x.index)));
+
+//   // Xác định folder đích và vị trí chèn
+//   let destFolderId = leanfs.getRoot();
+//   let insertIndex = 0;
+
+//   if (target.targetType === "between-items") {
+//     // Thả giữa các item, dùng parentItem và childIndex
+//     destFolderId = target.parentItem || leanfs.getRoot();
+//     insertIndex = Number.isFinite(target.childIndex)
+//       ? target.childIndex
+//       : (items[destFolderId]?.children?.length ?? 0);
+
+//   } else {
+//     // Thả lên item cụ thể
+//     const targetId = target.targetItem;
+//     const targetItem = items[targetId];
+
+//     console.log("Target item:", targetItem);
+
+//     if (!targetItem) return;
+
+//     destFolderId = isFolder(targetId) ? targetId : (targetItem.parent || leanfs.getRoot());
+//     insertIndex = Number.isFinite(target.childIndex)
+//       ? target.childIndex
+//       : (items[destFolderId]?.children?.length ?? 0);
+//   }
+
+//   // Chặn kéo folder vào chính con của nó
+//   for (const uuid of draggedIds) {
+//     if (uuid === destFolderId) return;
+//     if (isFolder(uuid) && isDescendantOf(destFolderId, uuid)) return;
+//   }
+
+//   const changed = new Set([destFolderId]);
+
+//   // Bỏ khỏi parent cũ
+//   for (const uuid of draggedIds) {
+//     const oldParent = removeFromParent(uuid);
+//     if (oldParent) changed.add(oldParent);
+//   }
+
+//   // Chèn vào folder đích theo thứ tự
+//   draggedIds.forEach((uuid, i) => {
+//     insertIntoFolder(destFolderId, uuid, insertIndex + i);
+//     changed.add(uuid);
+//   });
+
+//   rebuildParents();
+//   emitChanged(Array.from(changed));
+//   await saveWorkspaceTreeToLocalStorage();
+
+//   setTimeout(async () => {
+//     expandFolderChain(destFolderId);
+
+//     if (draggedIds.length === 1) {
+//       const movedId = draggedIds[0];
+//       const movedItem = items[movedId];
+//       if (!movedItem) return;
+
+//       pendingTreeFocusId = movedId;
+
+//       // Nếu là folder: mở luôn folder đó
+//       if (isFolder(movedId)) {
+//         try {
+//           const ctx = window.__rctItemActions.get(movedId);
+//           ctx?.expandItem?.();
+//           console.log("[MOVE] expanded moved folder =", movedId);
+//         } catch (e) {
+//           console.log("[MOVE] expand moved folder failed =", movedId, e);
+//         }
+//         return;
+//       }
+
+//       // Nếu là file: mở file, đồng thời folder cha đã được expand ở trên
+//       console.log("[MOVE] open moved file =", movedId, "parent =", movedItem.parent);
+//       await globalEditor.openFile(movedId);
+//     }
+//   }, 0);
+// }
 
 // ============================================================
 // TREE VIEWSTATE + CONTEXT MENU
 // ============================================================
-const initialOpenId = (window.currentFileId && items[window.currentFileId])
-  ? window.currentFileId
-  : null;
+const initialOpenId = leanfs.isExist(window.currentFileId)? window.currentFileId: null;
 
-const ancestorFolders = getAncestorFolders(initialOpenId);
+const ancestorFolders = leanfs.getAncestorFolders(initialOpenId);
 
 const viewState = {
   tree: {
-    expandedItems: ["root", ...ancestorFolders],
+    expandedItems: [leanfs.getRoot(), ...ancestorFolders],
     selectedItems: initialOpenId ? [initialOpenId] : [],
     focusedItem: initialOpenId || undefined,
   },
@@ -1254,9 +1118,10 @@ function hideCtxMenu() {
   ctxTargetId = null;
 }
 
-function showCtxMenu(x, y, itemId) {
+function showCtxMenu(x, y, uuid) {
+  if(window.treelocked) return;
   if (!ctxMenu) return;
-  ctxTargetId = itemId;
+  ctxTargetId = uuid;
 
   ctxMenu.classList.remove("is-hidden");
 
@@ -1274,30 +1139,17 @@ addEventListener("click", hideCtxMenu);
 
 ctxMenu?.addEventListener("click", (e) => e.stopPropagation());
 
-// Xóa item 
-function deleteSubtree(id) {
-  const it = items[id];
-  if (!it) return;
+async function deleteItemWithConfirm(uuid) {
+  if (!leanfs.isExist(uuid)) return;
+  if (uuid === leanfs.getRoot()) return;
 
-  if (isFolder(id) && Array.isArray(it.children)) {
-    for (const cid of it.children) deleteSubtree(cid);
-  } else {
-    delete fileContents[id];
-  }
-
-  delete items[id];
-}
-
-function deleteItemWithConfirm(itemId) {
-  const it = items[itemId];
-  if (!it) return;
-
-  const name = it.data || itemId;
-  const childCount = isFolder(itemId) ? (it.children?.length || 0) : 0;
+  const name = leanfs.getName(uuid);
+  const isFolder = leanfs.isDir(uuid);
+  const childCount = isFolder ? (leanfs.getAllChildren(uuid)?.length || 0) : 0;
 
   let message;
 
-  if (isFolder(itemId)) {
+  if (isFolder) {
     message = childCount > 0
       ? `Delete folder "${name}" and its ${childCount} items?`
       : `Delete folder "${name}"?`;
@@ -1306,86 +1158,56 @@ function deleteItemWithConfirm(itemId) {
   }
 
   const ok = window.confirm(message);
-  console.log("[DELETE] confirm =", ok, "id =", itemId);
+  console.log("[DELETE] confirm =", ok, "uuid =", uuid);
 
   if (!ok) return;
 
-  deleteItemById(itemId);
+  await deleteItemById(uuid);
 }
 
-function pickNextTreeItem(id) {
-  let firstFolder = null;
+async function deleteItemById(uuid) {
+  if (!leanfs.isExist(uuid)) return;
+  if (uuid === leanfs.getRoot()) return;
 
-  for (const it of Object.values(items)) {
-    if (!it || it.index === "root") continue;
+  const nextFocus = leanfs.pickNextItemAfterDelete(uuid);
 
-    if(id === it.index) continue; // id is the id going to be deleted
-
-    // prefer file
-    if (!isFolder(it.index)) {
-      return it.index;
-    }
-
-    // remember first folder as fallback
-    if (!firstFolder) {
-      firstFolder = it.index;
-    }
+  if (leanfs.isDir(uuid)) {
+    await leanfs.deleteDir(uuid);
+  } else {
+    await leanfs.deleteFile(uuid);
   }
 
-  // no file => return a folder if exists
-  if (firstFolder) return firstFolder;
+  await changeCurrentFileId(nextFocus);
 
-  // tree empty (only root exists)
-  return null;
-}
-
-function deleteItemById(id) {
-  if (!id || !items[id] || id === "root") return;
-
-  const parent = items[id]?.parent;
-  const nextFocus = parent && parent !== "root"? parent: pickNextTreeItem(id); // when delte, focus parent, buf if parent is non exits or root, focus the first file in tree
-
-  // gỡ id khỏi mọi folder trước, tránh lệch parent sau drag
-  const removedParent = removeFromParent(id) || (items[id].parent || "root");
-
-  deleteSubtree(id);
-
-  // focus lại
-  pendingTreeFocusId = items[removedParent] ? removedParent : "root";
-
-  window.currentFileId = nextFocus;
   if (nextFocus) {
-    requestTreeFocus(nextFocus);
-    if(!isFolder(nextFocus))openFileInEditor(nextFocus); // Nếu là file, mở trong editor
-    else getFolderContent(nextFocus); // nếu là folder, hiển thị cấu trúc folder trong editor
-  } 
-  else { // Nếu không còn file nào, clear editor
-    inoEditor.setContent("\\");
-    inoEditor.setReadOnly(true); // set read-only mode if  all files are deleted
+    pendingTreeFocusId = nextFocus;
+
+    if (leanfs.isFile(nextFocus)) {
+      await globalEditor.openFile(nextFocus);
+    } else {
+      globalEditor.setContentReadOnly(leanfs.readDir(nextFocus));
+    }
+  } else {
+    globalEditor.setContentReadOnly("\\");
   }
 
-  if (!items[lastFocusedId]) lastFocusedId = pendingTreeFocusId;
-  if (lastSelectedIds.some((x) => !items[x])) lastSelectedIds = [lastFocusedId];
-
-  rebuildParents();
-  emitChanged([removedParent, "root"]);
-  saveWorkspaceTreeToLocalStorage();
+  emitChanged([leanfs.getRoot()]);
 }
 
-ctxDeleteBtn?.addEventListener("click", (e) => {
+ctxDeleteBtn?.addEventListener("click", async (e) => {
   e.stopPropagation();
-  const id = ctxTargetId;
+  const uuid = ctxTargetId;
   hideCtxMenu();
-  deleteItemWithConfirm(id);
+  await deleteItemWithConfirm(uuid);
 });
 
 // Rename ngay khi bấm rename trong context menu
 ctxRenameBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
-  const id = ctxTargetId;
+  const uuid = ctxTargetId;
   hideCtxMenu();
 
-  const ctx = window.__rctItemActions.get(id);
+  const ctx = window.__rctItemActions.get(uuid);
   if (!ctx?.startRenamingItem) return;
 
   try { ctx.focusItem?.(); } catch (err) {}
@@ -1409,10 +1231,15 @@ reactRoot.render(
 
       allowRenaming: true,
 
-      canDragAndDrop: true,
-      canDropOnFolder: true,
+      // canDragAndDrop: true,
+      canDragAndDrop: false,
+
+      // canDropOnFolder: true,
+      canDropOnFolder: false,
+
       canReorderItems: true,
       canInvokePrimaryActionOnItemContainer: true,
+      defaultInteractionMode: "click-arrow-to-expand",
 
       onFocusItem: (item) => {
         if (!item) return;
@@ -1425,25 +1252,30 @@ reactRoot.render(
         if (lastSelectedIds.length > 0) lastFocusedId = lastSelectedIds[lastSelectedIds.length - 1];
       },
 
-      onPrimaryAction: (item) => {
-        console.log("onPrimaryAction:", item.index);
-        if (isFolder(item.index)){ // if folder, show content in editor
-          getFolderContent(item.index);
+      onPrimaryAction: async (item) => {
+
+        if(window.treelocked) return;
+        // console.log("onPrimaryAction:", item.index);
+        if (leanfs.isDir(item.index)){ // if folder, show content in editor
+          const folderContent = leanfs.readDir(item.index); // in folder structure to console
+          // window.currentFileId = item.index;
+          await changeCurrentFileId(item.index);
+          globalEditor.setContentReadOnly(folderContent);
           return;
         }
         // if file, open in monaco
         pendingTreeFocusId = item.index;
-        openFileInEditor(item.index);
+        await globalEditor.openFile(item.index);
       },
 
-      onRenameItem: (item, name) => {
+      onRenameItem: async (item, name) => {
         if (!item) return;
-        renameFileId(item.index, name);
+        await renameFileId(item.index, name);
       },
 
-      onDrop: (itemsDragged, target) => {
-        handleDrop(itemsDragged, target);
-      },
+      // onDrop: async (itemsDragged, target) => {
+      //   await handleDrop(itemsDragged, target);
+      // },
 
       renderItem: ({ item, title, arrow, context, children, depth }) => {
         rememberItemActions(item.index, context);
@@ -1565,7 +1397,7 @@ reactRoot.render(
     },
     window.React.createElement(Tree, {
       treeId: "tree",
-      rootItem: "root",
+      rootItem: leanfs.getRoot(),
       treeLabel: "Files",
     })
   )
@@ -1574,7 +1406,7 @@ reactRoot.render(
 // Initial focus file
 pendingTreeFocusId = initialOpenId;
 if (initialOpenId) {
-  openFileInEditor(initialOpenId);
+  await globalEditor.openFile(initialOpenId);
 }
 
 // ============================================================
@@ -1583,11 +1415,16 @@ if (initialOpenId) {
 
 function logLbIDEEvent(event) {
 
-  const shorten = (text, len = 64) =>{
-    if (typeof text !== "string") return "";  // null/undefined safe checking
-    const normalized = text.replace(/\r?\n+/g, " ").replace(/\s+/g, " ").trim()
-    return normalized.length > len ? normalized.slice(0, len) : normalized;
-  }
+  const shorten = (text, len = 64) => {
+    const normalized = String(text ?? "")
+      .replace(/\r?\n+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return normalized.length > len
+      ? normalized.slice(0, len)
+      : normalized;
+  };
 
   console.log(
     `LbIDEEvent
@@ -1597,4 +1434,15 @@ function logLbIDEEvent(event) {
     server_    : ${event.server_}
     t_phanhoi  : ${event.t_phanhoi}`
   );
+}
+
+function NameEnsureExtension(itemUUID, Extension) {
+
+  let currentName = String(leanfs.getName(itemUUID));
+
+  // nếu đã có .ino thì giữ nguyên
+  if (currentName.toLowerCase().endsWith(Extension)) return currentName;
+
+  // không có đuôi → tự thêm .ino
+  return currentName + Extension;
 }
