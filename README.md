@@ -19,6 +19,103 @@ py -m http.server 8000
 
 ---
 
+## 2026-02-13
+
+### 1. Blockly - Hide setup panel
+
+- Code change: https://github.com/namtranduc/LeanbotBLE_Uploader/commit/7f78c8c
+
+### 2. Blockly - Hide Blockly bottom bar
+
+- Explanation:
+  - This is used for the Compilation log and Serial console in original Blockly project
+  - https://blocklyduino.github.io/BlocklyDuino-v2/
+
+<img src="changelog/260213/BlocklyDuino_bottom_bar.png" width="1024"/>
+
+- Code change: https://github.com/namtranduc/LeanbotBLE_Uploader/commit/cd8fda2
+
+### 3. Integrate with new LeanbotBLE_Uploader
+
+- Code change: https://github.com/namtranduc/LeanbotBLE_Uploader/commit/9b20d8e
+
+- Add a wrapper layer for Ino and Blockly editors:
+
+```
+// main.js
+
+class GlobalEditor {
+  setContentReadOnly(contentString) {
+
+    document.getElementById("codeEditor").style.display    = "block";  // show Monaco
+    document.getElementById("blocklyEditor").style.display = "none";   // hide Blockly
+    inoEditor.setContentReadOnly(contentString);  // ino only
+  }
+
+  getContent() {
+    const fileId = window.currentFileId;
+
+    if ( leanfs.isBlocklyFile(fileId) ) {
+      return blocklyEditor.getContent();
+    } else {
+      return inoEditor.getContent();
+    }
+  }
+
+  getCppCode() {
+    const fileId = window.currentFileId;
+
+    if ( leanfs.isBlocklyFile(fileId) ) {
+      return blocklyEditor.getCppCode();
+    } else {
+      return inoEditor.getCppCode();
+    }
+  };
+
+  async openFile(fileId) { 
+    if (leanfs.isDir(fileId)) return; // avoid if a folder is passed
+
+    if (!inoEditor.__isMonacoReady || !inoEditor) {
+      window.__pendingOpenFileId = fileId;
+      return;
+    }
+
+    const content = await leanfs.readFile(fileId) ?? "";
+    await changeCurrentFileId(fileId);
+
+    if ( fileId && leanfs.isBlocklyFile(fileId) ) {
+      this.#openInBlockly(content);
+    } else {
+      this.#openInMonaco(content);
+    }
+
+    saveCurrentFileID(); // save current file uuid to local storage
+  }
+
+  /* ================= INTERNAL ================= */
+  #openInMonaco(content) {
+    document.getElementById("codeEditor").style.display    = "block";  // show Monaco
+    document.getElementById("blocklyEditor").style.display = "none";   // hide Blockly
+    inoEditor.setContent(content);
+  }
+
+  #openInBlockly(content) {
+    document.getElementById("codeEditor").style.display    = "none";  // hide Monaco
+    document.getElementById("blocklyEditor").style.display = "block"; // show Blockly
+    if ( ! blocklyEditor.setContent(content) ) {
+      openInMonaco(content);  // fallback to Monaco if failed
+    }
+  }
+}
+
+const inoEditor     = new InoEditor();
+const blocklyEditor = new BlocklyEditor();
+
+const globalEditor  = new GlobalEditor();  // wrapper for all editor types
+```
+
+---
+
 ## 2026-02-07
 
 ### 1. Allow using `Ctrl + /` to comment code in Monaco editor
