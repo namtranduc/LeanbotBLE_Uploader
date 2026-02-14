@@ -58,6 +58,16 @@ const leanbot = new LeanbotBLE();
 // ============================================================
 
 class GlobalEditor {
+  onPointerdownHandler() {
+    // console.log("onPointerdownHandler");
+    if (!autoHideCheckbox.checked) return;
+
+    // nếu serial đang mở thì mới hide
+    if (!serialSection.classList.contains('is-hidden')) {
+      closeSerial();
+    }
+  }
+
   setContentReadOnly(contentString) {
     // console.log("setContentReadOnly:", contentString);
     document.getElementById("codeEditor").style.display    = "block";  // show Monaco
@@ -602,12 +612,7 @@ tabs.forEach(tab => {
 });
 
 editorSection.addEventListener('pointerdown', (e) => {
-  if (!autoHideCheckbox.checked) return;
-
-  // nếu serial đang mở thì mới hide
-  if (!serialSection.classList.contains('is-hidden')) {
-    closeSerial();
-  }
+  globalEditor.onPointerdownHandler();
 });
 
 // ============================================================
@@ -640,6 +645,8 @@ inoEditor.onChangeContent = () =>  {
 // ============================================================
 
 window.onChangeBlockly = function (fileId) {
+  globalEditor.onPointerdownHandler();  // also trigger pointerdown event
+
   const uuid = fileId;
   if (!uuid) return;
 

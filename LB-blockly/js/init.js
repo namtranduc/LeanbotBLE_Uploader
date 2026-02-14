@@ -311,16 +311,24 @@ Code.init = function () {
       return true;
     }
 
+    // callback function when block change and pointerdown
     notifyBlockChange = function() {
         if (window.parent.onChangeBlockly) {
             const fileId = window.parent.currentFileId;
             clearTimeout(Blockly_changeTimer);
             Blockly_changeTimer = setTimeout(() => {
                 window.parent.onChangeBlockly(fileId);
-            }, 150);
+            }, 50);  // small debounce time to reduce change events
         }
     }
     Code.workspace.addChangeListener(notifyBlockChange);
+
+    /*
+        Forward event from DOM layer to Blockly layer to re-use code
+        - DOM layer: toolbox + ace editor
+        - BLockly layer: block workspace
+     */
+    window.addEventListener('pointerdown', notifyBlockChange);
 };
 
 /**
