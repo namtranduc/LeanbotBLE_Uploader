@@ -19,6 +19,41 @@ py -m http.server 8000
 
 ---
 
+## 2026-02-14
+
+### 1. Blockly - Fix horizontal scroll bar not working issue
+
+<img src="changelog/260214/Blockly_Horizontal_scroll_bar_moving_but_content_is_not.png" width="1024"/>
+
+- Inspect code section and scroll the horizontal bar:
+  - Ace sets left to `XXXpx`
+  - CSS overrides it immediately to `0px`
+  - Because of `!important`, Ace cannot override it
+  - Content never moves
+  - Scrollbar still moves
+
+- Code change: https://github.com/namtranduc/LeanbotBLE_Uploader/commit/f6f30d1
+  - Remove the CSS control for `.ace_content`, let Ace in JS fully control it
+  ```diff
+  - .ace_content{
+  -     left: 0px !important;
+  - }
+  ```
+
+
+### 2. Blockly - Add callback handler for pointerdown event
+
+- Issue: Bottom bar is not auto-hidden when click to Blockly section
+
+- Root cause:
+  - `iframe` has its own separate document and event system
+  - => Events inside an iframe DO NOT trigger to the parent document
+
+- Code change: https://github.com/namtranduc/LeanbotBLE_Uploader/commit/4e85dc4
+  - Trigger `pointerdown` from Blockly to parent
+
+---
+
 ## 2026-02-13
 
 ### 1. Blockly - Hide setup panel
