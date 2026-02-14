@@ -164,10 +164,15 @@ html[dir=rtl] {
     width: 100%;
     height: 100%;
 }
+
 /* ace editor */
+/* 260214 - Let Ace fully control .ace_content to fix horizontal scroll bar issue */
+/*
 .ace_content{
     left: 0px !important;
 }
+*/
+
 .switch {
   position: relative;
   display: inline-block;
